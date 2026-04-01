@@ -1,152 +1,157 @@
-export const GRAVITY = 0.5;
+// Constantes de física
+export const GRAVITY = 0.6;
+export const GROUND_Y = 320; // Altura do chão (canvas 400px - altura do chão 80px)
+export const WORLD_WIDTH = 800;
+export const WORLD_HEIGHT = 400;
 
-export function clampValue(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
+/**
+ * Aplica gravidade a uma entidade
+ */
 export function applyGravity(entity, gravity = GRAVITY) {
   entity.velocityY += gravity;
 }
 
-export function resolvePlayerGroundCollision(player, groundY) {
-  const playerBottom = player.y + player.height;
-
-  if (playerBottom >= groundY) {
-    player.y = groundY - player.height;
-    player.velocityY = 0;
-    player.onGround = true;
-    return;
-  }
-
-  player.onGround = false;
+/**
+ * Limita um valor entre mín e máx
+ */
+export function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
-export function resolveBallGroundCollision(ball, groundY) {
-  const ballBottom = ball.y + ball.radius;
+/**
+ * Detecta colisão entre círculo (bola) e retângulo (player)
+ */
+export function circleRectCollision(circle, rect) {
+  const closestX = clamp(circle.x, rect.x, rect.x + rect.width);
+  const closestY = clamp(circle.y, rect.y, rect.y + rect.height);
 
-  if (ballBottom >= groundY) {
-    ball.y = groundY - ball.radius;
-
-    const dynamicBounce = Math.abs(ball.velocityY) > 6 ? -0.8 : -0.68;
-    ball.velocityY *= dynamicBounce;
-
-    if (Math.abs(ball.velocityY) < 0.45) {
-      ball.velocityY = 0;
-    }
-  }
-}
-
-export function resolveBallWallCollision(ball, worldWidth) {
-  if (ball.x - ball.radius <= 0) {
-    ball.x = ball.radius;
-    ball.velocityX *= -0.8;
-  }
-
-  if (ball.x + ball.radius >= worldWidth) {
-    ball.x = worldWidth - ball.radius;
-    ball.velocityX *= -0.8;
-  }
-}
-
-export function detectCircleRectCollision(ball, rect) {
-  const closestX = clampValue(ball.x, rect.x, rect.x + rect.width);
-  const closestY = clampValue(ball.y, rect.y, rect.y + rect.height);
-
-  const dx = ball.x - closestX;
-  const dy = ball.y - closestY;
+  const dx = circle.x - closestX;
+  const dy = circle.y - closestY;
   const distanceSq = dx * dx + dy * dy;
+  const radiusSq = circle.radius * circle.radius;
 
-  if (distanceSq > ball.radius * ball.radius) {
-    return null;
+  if (distanceSq > radiusSq) {
+    return null; // Sem colisão
   }
 
-  const distance = Math.sqrt(distanceSq) || 0.0001;
-  const overlap = ball.radius - distance;
+  // Centro do circulo dentro do retangulo: definir normal/overlap manualmente.
+  if (distanceSq < 0.0001) {
+    const distToLeft = circle.x - rect.x;
+    const distToRight = rect.x + rect.width - circle.x;
+    const distToTop = circle.y - rect.y;
+    const distToBottom = rect.y + rect.height - circle.y;
+    const minDist = Math.min(distToLeft, distToRight, distToTop, distToBottom);
+
+    if (minDist === distToLeft) {
+      return { dx: -1, dy: 0, distance: 1, overlap: circle.radius + distToLeft, normalX: -1, normalY: 0 };
+    }
+
+    if (minDist === distToRight) {
+      return { dx: 1, dy: 0, distance: 1, overlap: circle.radius + distToRight, normalX: 1, normalY: 0 };
+    }
+
+    if (minDist === distToTop) {
+      return { dx: 0, dy: -1, distance: 1, overlap: circle.radius + distToTop, normalX: 0, normalY: -1 };
+    }
+
+    return { dx: 0, dy: 1, distance: 1, overlap: circle.radius + distToBottom, normalX: 0, normalY: 1 };
+  }
+
+  const distance = Math.sqrt(distanceSq) || 0.001;
+  const overlap = circle.radius - distance;
 
   return {
     dx,
     dy,
     distance,
     overlap,
+    normalX: dx / distance,
+    normalY: dy / distance,
   };
 }
 
-export function resolveBallPlayerCollision(ball, player) {
-  const hit = detectCircleRectCollision(ball, player);
-  if (!hit) return;
+/**
+ * Resolve colisão entre bola e chão
+ */
+export function ballGroundCollision(ball, groundY) {
+  const ballBottom = ball.y + ball.radius;
 
-  // Resolve penetração primeiro para evitar "grudar" entre bola e player.
-  const normalX = hit.dx / hit.distance;
-  const normalY = hit.dy / hit.distance;
+  if (ballBottom >= groundY) {
+    ball.y = groundY - ball.radius;
+    ball.velocityY *= -0.99; // Bounce bem mais alto
 
-  ball.x += normalX * (hit.overlap + 0.5);
-  ball.y += normalY * (hit.overlap + 0.5);
-
-  const relativeVelocityX = ball.velocityX - player.velocityX;
-  const relativeVelocityY = ball.velocityY - player.velocityY;
-  const velocityAlongNormal = relativeVelocityX * normalX + relativeVelocityY * normalY;
-
-  if (velocityAlongNormal < 0) {
-    const restitution = 0.82;
-    const impulse = -(1 + restitution) * velocityAlongNormal;
-
-    ball.velocityX += impulse * normalX;
-    ball.velocityY += impulse * normalY;
-  }
-
-  ball.velocityX += player.velocityX * 0.22;
-
-  if (!player.onGround) {
-    ball.velocityX += player.velocityX * 0.12 + normalX * 0.45;
-    ball.velocityY -= 0.5;
-  }
-
-  if (Math.abs(ball.velocityX) < 0.2) {
-    const direction = ball.x >= player.x + player.width / 2 ? 1 : -1;
-    ball.velocityX += direction * 0.6;
+    // Amortecimento horizontal
+    if (Math.abs(ball.velocityY) < 1) {
+      ball.velocityY = 0;
+    }
   }
 }
 
-export function resolvePlayerPlayerCollision(playerA, playerB) {
-  const overlapX =
-    Math.min(playerA.x + playerA.width, playerB.x + playerB.width) -
-    Math.max(playerA.x, playerB.x);
+/**
+ * Resolve colisão entre bola e player
+ */
+export function ballPlayerCollision(ball, player) {
+  const collision = circleRectCollision(ball, player);
+  if (!collision) return;
 
-  const overlapY =
-    Math.min(playerA.y + playerA.height, playerB.y + playerB.height) -
-    Math.max(playerA.y, playerB.y);
+  // Afastar a bola para evitar grudar
+  ball.x += collision.normalX * (collision.overlap + 1);
+  ball.y += collision.normalY * (collision.overlap + 1);
 
-  if (overlapX <= 0 || overlapY <= 0) {
+  // Componente de velocidade relativa ao longo da normal
+  const relVelX = ball.velocityX - player.velocityX;
+  const relVelY = ball.velocityY - player.velocityY;
+  const velAlongNormal = relVelX * collision.normalX + relVelY * collision.normalY;
+
+  // Só aplicar impulso se a bola está se aproximando
+  if (velAlongNormal < 0) {
+    const restitution = 1.1; // Elasticidade
+    const impulse = -(1 + restitution) * velAlongNormal;
+
+    ball.velocityX += impulse * collision.normalX;
+    ball.velocityY += impulse * collision.normalY;
+  }
+
+  // Garante que a bola nao continue entrando no player no mesmo frame.
+  const postRelVelX = ball.velocityX - player.velocityX;
+  const postRelVelY = ball.velocityY - player.velocityY;
+  const postVelAlongNormal = postRelVelX * collision.normalX + postRelVelY * collision.normalY;
+  if (postVelAlongNormal < 0) {
+    ball.velocityX -= postVelAlongNormal * collision.normalX;
+    ball.velocityY -= postVelAlongNormal * collision.normalY;
+  }
+
+  // Transferência de velocidade horizontal do player para bola
+  ball.velocityX += player.velocityX * 0.3;
+}
+
+/**
+ * Resolve colisão entre player e chão
+ */
+export function playerGroundCollision(player, groundY) {
+  const playerBottom = player.y + player.height;
+
+  if (playerBottom >= groundY) {
+    player.y = groundY - player.height;
+    player.velocityY = 0;
+    player.isGrounded = true;
     return;
   }
 
-  if (overlapX < overlapY) {
-    const push = overlapX / 2;
+  player.isGrounded = false;
+}
 
-    if (playerA.x < playerB.x) {
-      playerA.x -= push;
-      playerB.x += push;
-    } else {
-      playerA.x += push;
-      playerB.x -= push;
-    }
-
-    const averageVelocity = (playerA.velocityX + playerB.velocityX) / 2;
-    playerA.velocityX = averageVelocity;
-    playerB.velocityX = averageVelocity;
-    return;
+/**
+ * Resolve colisão entre bola e paredes
+ */
+export function ballWallCollision(ball, worldWidth) {
+  if (ball.x - ball.radius <= 0) {
+    ball.x = ball.radius;
+    ball.velocityX *= -0.85;
   }
 
-  const push = overlapY / 2;
-  if (playerA.y < playerB.y) {
-    playerA.y -= push;
-    playerB.y += push;
-    playerA.velocityY = Math.min(playerA.velocityY, 0);
-    playerB.velocityY = Math.max(playerB.velocityY, 0);
-  } else {
-    playerA.y += push;
-    playerB.y -= push;
-    playerA.velocityY = Math.max(playerA.velocityY, 0);
-    playerB.velocityY = Math.min(playerB.velocityY, 0);
+  if (ball.x + ball.radius >= worldWidth) {
+    ball.x = worldWidth - ball.radius;
+    ball.velocityX *= -0.85;
   }
 }

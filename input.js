@@ -1,67 +1,73 @@
 export class InputController {
   constructor() {
-    this.keysP1 = {
+    // Player 1 (WASD)
+    this.player1 = {
       left: false,
       right: false,
       jump: false,
-      jumpPressed: false,
     };
 
-    this.keysP2 = {
+    // Player 2 (Setas)
+    this.player2 = {
       left: false,
       right: false,
       jump: false,
-      jumpPressed: false,
     };
 
-    this.onKeyDown = this.onKeyDown.bind(this);
-    this.onKeyUp = this.onKeyUp.bind(this);
-
-    window.addEventListener("keydown", this.onKeyDown);
-    window.addEventListener("keyup", this.onKeyUp);
+    this.setupListeners();
   }
 
+  /**
+   * Configura listeners de teclado
+   */
+  setupListeners() {
+    window.addEventListener("keydown", (e) => this.onKeyDown(e));
+    window.addEventListener("keyup", (e) => this.onKeyUp(e));
+  }
+
+  /**
+   * Processa tecla pressionada
+   */
   onKeyDown(event) {
     const key = event.key.toLowerCase();
 
-    if (key === "a") this.keysP1.left = true;
-    if (key === "d") this.keysP1.right = true;
+    // Player 1 (WASD)
+    if (key === "a") this.player1.left = true;
+    if (key === "d") this.player1.right = true;
     if (key === "w") {
-      if (!this.keysP1.jump) this.keysP1.jumpPressed = true;
-      this.keysP1.jump = true;
+      this.player1.jump = true;
+      event.preventDefault();
     }
 
-    if (event.key === "ArrowLeft") this.keysP2.left = true;
-    if (event.key === "ArrowRight") this.keysP2.right = true;
+    // Player 2 (Setas)
+    if (event.key === "ArrowLeft") this.player2.left = true;
+    if (event.key === "ArrowRight") this.player2.right = true;
     if (event.key === "ArrowUp") {
-      if (!this.keysP2.jump) this.keysP2.jumpPressed = true;
-      this.keysP2.jump = true;
-    }
-
-    if (["ArrowLeft", "ArrowRight", "ArrowUp", "a", "d", "w", "W"].includes(event.key)) {
+      this.player2.jump = true;
       event.preventDefault();
     }
   }
 
+  /**
+   * Processa tecla solta
+   */
   onKeyUp(event) {
     const key = event.key.toLowerCase();
 
-    if (key === "a") this.keysP1.left = false;
-    if (key === "d") this.keysP1.right = false;
-    if (key === "w") this.keysP1.jump = false;
+    // Player 1 (WASD)
+    if (key === "a") this.player1.left = false;
+    if (key === "d") this.player1.right = false;
+    if (key === "w") {
+      this.player1.jump = false;
+      event.preventDefault();
+    }
 
-    if (event.key === "ArrowLeft") this.keysP2.left = false;
-    if (event.key === "ArrowRight") this.keysP2.right = false;
-    if (event.key === "ArrowUp") this.keysP2.jump = false;
-  }
-
-  endFrame() {
-    this.keysP1.jumpPressed = false;
-    this.keysP2.jumpPressed = false;
-  }
-
-  destroy() {
-    window.removeEventListener("keydown", this.onKeyDown);
-    window.removeEventListener("keyup", this.onKeyUp);
+    // Player 2 (Setas)
+    if (event.key === "ArrowLeft") this.player2.left = false;
+    if (event.key === "ArrowRight") this.player2.right = false;
+    if (event.key === "ArrowUp") {
+      this.player2.jump = false;
+      event.preventDefault();
+    }
   }
 }
