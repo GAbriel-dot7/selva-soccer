@@ -9,10 +9,46 @@ export class Player {
     this.velocityX = 0;
     this.velocityY = 0;
 
-    this.speed = 4.5; // Aceleração ao se mover
-    this.maxSpeedX = 6; // Velocidade máxima horizontal
-    this.jumpForce = 12; // Força do pulo
-    this.friction = 0.82; // Fricção do movimento horizontal
+    // -----------------------------------------------------------------------
+    // Movement tuning constants
+    // -----------------------------------------------------------------------
+
+    /**
+     * Horizontal acceleration added per input frame.
+     * Formula: v_x += speed  (clamped to ±maxSpeedX)
+     * Higher = snappier response to key presses.
+     */
+    this.speed = 5.0;
+
+    /**
+     * Maximum horizontal speed (pixels / frame at timeScale = 1).
+     * Acts as a hard clamp: |v_x| ≤ maxSpeedX.
+     */
+    this.maxSpeedX = 7;
+
+    /**
+     * Impulse applied upward when the player jumps.
+     * Formula: v_y = -jumpForce  (negative = upward in screen coords)
+     * 13 gives a slightly higher arc for more aerial play.
+     */
+    this.jumpForce = 13;
+
+    /**
+     * Deceleration multiplier applied each frame when NO horizontal input
+     * is held.
+     * Formula: v_x *= friction  (each idle frame)
+     * Lower values = player stops faster (tighter control).
+     * 0.78 makes the player feel snappy and responsive on release.
+     */
+    this.friction = 0.78;
+
+    /**
+     * Friction multiplier used while the player is airborne (no ground
+     * contact). Slightly higher than ground friction so the player retains
+     * more momentum in the air — feels more natural for aerial kicks.
+     * Formula: v_x *= airFriction  (each airborne frame without input)
+     */
+    this.airFriction = 0.92;
 
     this.isGrounded = false;
     this.spawnX = x;
@@ -20,22 +56,35 @@ export class Player {
   }
 
   /**
-   * Processa input do teclado
+   * Processes keyboard input and updates horizontal velocity + jump.
+   *
+   * Acceleration model (per frame):
+   *   - Key held:  v_x = clamp(v_x ± speed, -maxSpeedX, maxSpeedX)
+   *   - No key:    v_x *= friction   (ground) or airFriction (air)
+   *   - Dead-zone: if |v_x| < 0.1 → v_x = 0  (prevent drift)
+   *
+   * Jump: instantaneous impulse v_y = -jumpForce, only while grounded.
    */
   processInput(keys) {
     if (keys.left) {
+      // Accelerate left, clamped to -maxSpeedX
       this.velocityX = Math.max(this.velocityX - this.speed, -this.maxSpeedX);
     } else if (keys.right) {
+      // Accelerate right, clamped to +maxSpeedX
       this.velocityX = Math.min(this.velocityX + this.speed, this.maxSpeedX);
     } else {
-      // Freio natural quando não há input
-      this.velocityX *= this.friction;
+      // No horizontal input — apply friction to decelerate.
+      // Use lighter air friction when airborne so the player drifts naturally.
+      const frictionFactor = this.isGrounded ? this.friction : this.airFriction;
+      this.velocityX *= frictionFactor;
+
+      // Dead-zone: snap to zero to prevent imperceptible sliding
       if (Math.abs(this.velocityX) < 0.1) {
         this.velocityX = 0;
       }
     }
 
-    // Pular
+    // Jump — apply instantaneous upward impulse (only when grounded)
     if (keys.jump && this.isGrounded) {
       this.velocityY = -this.jumpForce;
       this.isGrounded = false;
@@ -43,7 +92,14 @@ export class Player {
   }
 
   /**
-   * Atualiza posição com base em velocidade
+   * Integrates velocity into position (Euler step).
+   *
+   * Formula:
+   *   x(t+dt) = x(t) + v_x * dt
+   *   y(t+dt) = y(t) + v_y * dt
+   *
+   * `timeScale` is the sub-step fraction (1/stepCount) so that the total
+   * displacement per frame stays consistent regardless of sub-step count.
    */
   update(timeScale = 1) {
     this.x += this.velocityX * timeScale;
