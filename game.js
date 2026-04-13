@@ -74,38 +74,58 @@ export class Game {
   }
 
   /**
-   * Atualiza a lógica do jogo
+   * Atualiza a lógica do jogo (physics tick).
+   *
+   * We use **fixed-size sub-stepping** to keep the simulation stable even
+   * when the browser delivers variable frame deltas (e.g. 60 Hz vs 144 Hz).
+   *
+   * Algorithm:
+   *   stepCount = ceil(deltaMs / 8)          — how many 8 ms micro-steps
+   *   stepScale = 1 / stepCount              — fraction of a full frame each
+   *                                            micro-step represents
+   *
+   * Inside each micro-step the order matters:
+   *   1. Gravity          — accelerate downward (scaled by stepScale)
+   *   2. Position update  — integrate velocity → position (Euler step)
+   *   3. World bounds     — clamp players inside the field
+   *   4. Ground / wall    — resolve environment collisions first
+   *   5. Ball vs players  — resolve entity collisions last so the ball
+   *                         separates cleanly
+   *
+   * After all micro-steps, goal detection runs once per frame.
    */
   update(deltaMs = 16.67) {
+    // Determine the number of sub-steps.  More sub-steps = more accurate at
+    // the cost of CPU.  Clamped to [1, 6] to avoid runaway loops on lag spikes.
     const stepCount = Math.max(1, Math.min(6, Math.ceil(deltaMs / 8)));
     const stepScale = 1 / stepCount;
 
     for (let i = 0; i < stepCount; i += 1) {
-      // Aplicar gravidade em subpassos para reduzir tunneling
+      // --- 1. Apply gravity (v_y += g * dt) scaled to sub-step size ---
       applyGravity(this.player1, GRAVITY * stepScale);
       applyGravity(this.player2, GRAVITY * stepScale);
       applyGravity(this.ball, GRAVITY * stepScale);
 
-      // Atualizar posições
+      // --- 2. Integrate positions (x += v_x * dt, y += v_y * dt) ---
       this.player1.update(stepScale);
       this.player2.update(stepScale);
       this.ball.update(stepScale);
 
-      // Retalhos de mundo
+      // --- 3. Constrain players to world boundaries ---
       this.constrainToWorld();
 
-      // Colisões
+      // --- 4. Environment collisions (ground & walls) ---
       playerGroundCollision(this.player1, this.groundY);
       playerGroundCollision(this.player2, this.groundY);
       ballGroundCollision(this.ball, this.groundY);
       ballWallCollision(this.ball, this.width);
 
-      // Colisão bola vs players
+      // --- 5. Entity collisions (ball ↔ players) ---
       ballPlayerCollision(this.ball, this.player1);
       ballPlayerCollision(this.ball, this.player2);
     }
 
-    // Detectar gols
+    // Goal detection runs once per visual frame (not per sub-step)
     this.checkGoals();
   }
 
